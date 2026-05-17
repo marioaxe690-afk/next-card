@@ -3,8 +3,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
-  BookOpen,
-  CheckCircle2,
   FileText,
   ImagePlus,
   Loader2,
@@ -17,12 +15,17 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import type { ChatMessage, ClarifyingQuestion, InputsState } from "@/lib/types";
+import type { ChatMessage, ClarifyingQuestion, InputsState, PlanOption, TaskDeck, TaskFlowState } from "@/lib/types";
 import { PlanOptionCard } from "@/components/input/PlanOptionCard";
 import { useNextCardStore } from "@/store/useNextCardStore";
+import { CompactPlanCatalog } from "@/components/deck/CompactPlanCatalog";
 
 const examples = ["去高数课", "今晚 20:00 前交一页课程分析", "把明天早八课表变成提醒卡"];
-const planLabels = ["快速", "稳妥", "低压"];
+const planLabels: Record<PlanOption["style"], string> = {
+  urgent: "快速",
+  balanced: "稳妥",
+  gentle: "低压"
+};
 
 export function InputComposer() {
   const {
@@ -50,7 +53,6 @@ export function InputComposer() {
     regeneratePlans,
     openDeck,
     selectPlan,
-    openPlanCatalog,
     openOverlay
   } = useNextCardStore();
 
@@ -65,9 +67,6 @@ export function InputComposer() {
     activeDeck?.cards[0];
   const hasSelectedPlan = Boolean(taskFlow && analysis && activeDeck && plans.selectedPlanId);
   const selectedPlan = plans.options.find((option) => option.id === plans.selectedPlanId) ?? plans.options[0];
-  const progress = activeDeck && activeDeck.totalCards > 0
-    ? Math.round((activeDeck.completedCards / activeDeck.totalCards) * 100)
-    : taskFlow?.overallProgress ?? 0;
 
   const showInputBar = !hasSelectedPlan && analysisStatus === "idle";
   const showWelcome = analysisStatus === "idle" && !hasSelectedPlan;
@@ -159,16 +158,15 @@ export function InputComposer() {
           {hasSelectedPlan && (
             <ResultPanel
               key="result"
-              activeDeckId={activeDeck?.id}
-              recommendedTitle={recommendedCard?.title ?? taskFlow?.title ?? "先做第一步"}
-              recommendedAction={recommendedCard?.action ?? selectedPlan?.summary ?? "先完成一个 10 分钟内能做的小动作。"}
-              minutes={recommendedCard?.estimatedMinutes ?? 10}
-              progress={progress}
+              activeDeck={activeDeck}
+              taskFlow={taskFlow}
+              currentCardId={recommendedCard?.id ?? deck.currentCardId}
+              selectedPlan={selectedPlan}
               options={plans.options}
               selectedPlanId={plans.selectedPlanId}
               onSelectPlan={selectPlan}
-              onOpenPlan={openPlanCatalog}
               onOpenDeck={openDeck}
+              onOpenCard={(cardId) => openOverlay("deck-card-detail", cardId)}
               onReset={resetInputDraft}
             />
           )}
@@ -841,28 +839,26 @@ function PlanChoicePanel({
 }
 
 function ResultPanel({
-  activeDeckId,
-  recommendedTitle,
-  recommendedAction,
-  minutes,
-  progress,
+  activeDeck,
+  taskFlow,
+  currentCardId,
+  selectedPlan,
   options,
   selectedPlanId,
   onSelectPlan,
-  onOpenPlan,
   onOpenDeck,
+  onOpenCard,
   onReset
 }: {
-  activeDeckId?: string;
-  recommendedTitle: string;
-  recommendedAction: string;
-  minutes: number;
-  progress: number;
-  options: { id: "plan-1" | "plan-2" | "plan-3"; name: string }[];
+  activeDeck?: TaskDeck;
+  taskFlow: TaskFlowState | null;
+  currentCardId?: string | null;
+  selectedPlan?: PlanOption;
+  options: PlanOption[];
   selectedPlanId: string | null;
-  onSelectPlan: (id: "plan-1" | "plan-2" | "plan-3") => void;
-  onOpenPlan: () => void;
+  onSelectPlan: (id: PlanOption["id"]) => void;
   onOpenDeck: (deckId: string) => void;
+  onOpenCard: (cardId: string) => void;
   onReset: () => void;
 }) {
   return (
@@ -870,108 +866,110 @@ function ResultPanel({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="flex h-full min-h-0 flex-col"
+      className="flex h-full min-h-0 flex-col px-2"
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-fern">推荐行动</div>
-          <h1 className="mt-1 truncate font-editorial text-[1.72rem] leading-tight text-ink">{recommendedTitle}</h1>
+      <div className="shrink-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 pt-0.5">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-fern">行动计划</div>
+            <h1 className="mt-1.5 line-clamp-2 font-editorial text-[1.98rem] leading-[0.98] text-ink">
+              {taskFlow?.title ?? activeDeck?.coverTitle}
+            </h1>
+            <p className="mt-2 line-clamp-1 text-[0.84rem] leading-5 text-ink/58">
+              先看目录，再开始执行。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onReset}
+            className="mt-1 grid size-9 shrink-0 place-items-center rounded-full border border-ink/10 bg-white/54 text-ink/64 transition hover:bg-white"
+            aria-label="重新输入"
+          >
+            <RotateCcw size={15} />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="grid size-9 shrink-0 place-items-center rounded-full border border-ink/10 bg-white/62 text-ink"
-          aria-label="重新输入"
-        >
-          <RotateCcw size={15} />
-        </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-1 rounded-full border border-ink/10 bg-white/60 p-1">
-        {options.map((option, index) => {
-          const selected = selectedPlanId === option.id;
-
-          return (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => onSelectPlan(option.id)}
-              className={`h-8 rounded-full text-xs font-semibold transition ${
-                selected ? "bg-ink text-white shadow-sm" : "text-ink/58 hover:bg-white/72"
-              }`}
-              aria-pressed={selected}
-            >
-              {planLabels[index] ?? option.name}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-3 min-h-0 flex-1 overflow-hidden">
-        <RecommendedCard
-          title={recommendedTitle}
-          action={recommendedAction}
-          minutes={minutes}
-          progress={progress}
-          onOpenPlan={onOpenPlan}
+      {options.length > 0 && (
+        <PlanChoiceBar
+          options={options}
+          selectedPlanId={selectedPlanId}
+          onSelectPlan={onSelectPlan}
         />
+      )}
+
+      <div className="mt-3 shrink-0">
+        {activeDeck && (
+          <CompactPlanCatalog
+            deck={activeDeck}
+            taskFlow={taskFlow}
+            variant="cards"
+            currentCardId={currentCardId}
+            selectedPlanName={selectedPlan?.name}
+            planSummary={selectedPlan?.summary}
+            onOpenCard={onOpenCard}
+          />
+        )}
       </div>
 
-      {activeDeckId && (
-        <button
-          type="button"
-          onClick={() => onOpenDeck(activeDeckId)}
-          className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-ink text-sm font-semibold text-white shadow-[0_14px_28px_rgba(6,63,39,0.18)]"
-        >
-          开始行动
-          <ArrowRight size={16} />
-        </button>
+      {activeDeck && (
+        <div className="mt-auto shrink-0 pt-5">
+          <button
+            type="button"
+            onClick={() => onOpenDeck(activeDeck.id)}
+            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-full bg-ink text-sm font-semibold text-white shadow-[0_14px_28px_rgba(6,63,39,0.18)]"
+          >
+            开始行动
+            <ArrowRight size={16} />
+          </button>
+        </div>
       )}
     </motion.div>
   );
 }
 
-function RecommendedCard({
-  title,
-  action,
-  minutes,
-  progress,
-  onOpenPlan
+function PlanChoiceBar({
+  options,
+  selectedPlanId,
+  onSelectPlan
 }: {
-  title: string;
-  action: string;
-  minutes: number;
-  progress: number;
-  onOpenPlan: () => void;
+  options: PlanOption[];
+  selectedPlanId: string | null;
+  onSelectPlan: (id: PlanOption["id"]) => void;
 }) {
   return (
-    <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-[1.5rem] border border-ink/10 bg-[#fff8f1] p-4 shadow-card">
-      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-ink/56">
-        <span className="flex items-center gap-1.5">
-          <CheckCircle2 size={14} />
-          第一张卡
-        </span>
-        <span>{minutes} 分钟</span>
-      </div>
-      <h2 className="mt-5 font-editorial text-[2rem] leading-tight text-ink">{title}</h2>
-      <p className="mt-3 line-clamp-3 text-[0.95rem] leading-7 text-ink/68">{action}</p>
-      <div className="mt-auto">
-        <div className="flex items-center justify-between text-xs font-semibold text-ink/52">
-          <span>计划进度</span>
-          <span>{progress}%</span>
+    <section className="mt-3">
+      <div className="grid grid-cols-[4.4rem_minmax(0,1fr)] items-center gap-2">
+        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-ink/42">
+          选择
+          <br />
+          节奏
         </div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink/8">
-          <div className="h-full rounded-full bg-moss" style={{ width: `${progress}%` }} />
+        <div className="grid grid-cols-3 gap-1 rounded-full border border-ink/10 bg-white/54 p-1 shadow-sm">
+          {options.map((option) => {
+            const selected = option.id === selectedPlanId;
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onSelectPlan(option.id)}
+                className={`h-11 min-w-0 rounded-full px-3 py-1.5 text-left transition ${
+                  selected
+                    ? "bg-ink text-white shadow-[0_10px_22px_rgba(6,63,39,0.18)]"
+                    : "text-ink hover:bg-white/58"
+                }`}
+                aria-pressed={selected}
+              >
+                <span className="block truncate text-sm font-semibold leading-4">{planLabels[option.style] ?? option.name}</span>
+                <span className={`mt-1 block truncate text-[0.66rem] font-semibold ${selected ? "text-white/66" : "text-ink/48"}`}>
+                  {option.estimatedTime}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <button
-          type="button"
-          onClick={onOpenPlan}
-          className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-full border border-ink/10 bg-white/68 text-sm font-semibold text-ink"
-        >
-          <BookOpen size={15} />
-          查看计划
-        </button>
       </div>
-    </article>
+    </section>
   );
 }
