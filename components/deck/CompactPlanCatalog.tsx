@@ -1,16 +1,17 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { AlertTriangle, Check, CircleDot, Flame, Snowflake, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { PlanOption, TaskCard, TaskDeck, TaskFlowState } from "@/lib/types";
 
 type CompactPlanCatalogProps = {
   deck: TaskDeck;
   taskFlow?: TaskFlowState | null;
   currentCardId?: string | null;
+  variant?: "groups" | "cards" | "document";
   planOptions?: PlanOption[];
   selectedPlanId?: string | null;
   selectedPlanName?: string;
+  planSummary?: string;
   onSelectPlan?: (planId: PlanOption["id"]) => void;
   onClose?: () => void;
   onOpenCard?: (cardId: string) => void;
@@ -23,38 +24,34 @@ type CatalogGroup = {
   status: "completed" | "active" | "frozen" | "failed" | "queued";
 };
 
-const planTone: Record<PlanOption["style"], string> = {
-  urgent: "快速",
-  balanced: "稳妥",
-  gentle: "低压"
-};
-
 export function CompactPlanCatalog({
   deck,
   taskFlow,
   currentCardId,
-  planOptions = [],
-  selectedPlanId,
-  selectedPlanName,
-  onSelectPlan,
-  onClose
+  variant = "groups",
+  onClose,
+  onOpenCard
 }: CompactPlanCatalogProps) {
-  const completed = deck.cards.filter((card) => card.status === "completed" || card.status === "rewarded").length;
   const total = deck.cards.length || deck.totalCards;
-  const progress = total === 0 ? 0 : Math.round((completed / total) * 100);
-  const selectedOption = planOptions.find((option) => option.id === selectedPlanId);
   const groups = buildCatalogGroups(deck, taskFlow, currentCardId);
   const totalMinutes = deck.cards.reduce((sum, card) => sum + card.estimatedMinutes, 0);
+  const completedCards = deck.cards.filter((card) => isCompletedCard(card)).length;
   const status = getDeckStatusCopy(deck.deckStatus);
+  const visibleGroups = groups.slice(0, 4);
+  const showCards = variant === "cards";
+  const showDocument = variant === "document";
+  const documentRows = showDocument ? deck.cards : [];
 
   return (
-    <section className="relative z-10 flex max-h-full min-h-0 flex-col overflow-hidden rounded-[1.35rem] border border-ink/10 bg-white/[0.8] p-3 text-ink shadow-[0_18px_46px_rgba(31,41,35,0.09)] backdrop-blur-xl">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/90 to-transparent" aria-hidden />
-      <header className="relative z-10 shrink-0 px-1 pt-1">
+    <section className={`relative z-10 text-ink ${showDocument ? "flex h-full min-h-0 flex-col" : ""}`}>
+      <header className={showDocument ? "shrink-0" : undefined}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-fern/80">Task flow</div>
-            <h2 className="mt-1 truncate text-[1.08rem] font-semibold leading-6 text-ink">{deck.coverTitle}</h2>
+            <div className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-ink/42">任务计划目录</div>
+            <h2 className="mt-1.5 line-clamp-2 font-editorial text-[1.72rem] leading-[1.03] text-ink">{deck.coverTitle}</h2>
+            <p className="mt-1 text-[0.8rem] font-semibold leading-5 text-ink/54">
+              {showCards || showDocument ? `${total} 张任务卡 · 已完成 ${completedCards} 张 · ${totalMinutes} min` : `${groups.length} 个阶段 · ${total} 张卡 · ${totalMinutes} min`}
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ring-1 ${status.className}`}>
@@ -72,84 +69,211 @@ export function CompactPlanCatalog({
             )}
           </div>
         </div>
-
-        <div className="mt-3 rounded-[1rem] border border-ink/8 bg-white/56 p-3">
-          <div className="flex items-center justify-between gap-3 text-[0.72rem] font-medium text-ink/48">
-            <span className="truncate">{selectedOption?.summary ?? selectedPlanName ?? `${groups.length} 个阶段 · ${total} 张卡`}</span>
-            <span className="shrink-0">{progress}%</span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/[0.07]">
-            <motion.div
-              className="h-full rounded-full bg-[linear-gradient(90deg,#0d3b2a,#4f7f63)]"
-              initial={false}
-              animate={{ width: `${progress}%` }}
-              transition={{ type: "spring", stiffness: 240, damping: 28 }}
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[0.68rem] font-semibold text-ink/42">
-            <span>{completed}/{total} 已完成</span>
-            <span>{totalMinutes} min</span>
-          </div>
-        </div>
-
-        {planOptions.length > 0 && (
-          <div className="mt-3 grid grid-cols-3 gap-1 rounded-full border border-ink/8 bg-ink/[0.035] p-1">
-            {planOptions.map((option) => {
-              const selected = option.id === selectedPlanId;
-
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onSelectPlan?.(option.id)}
-                  className={`h-8 min-w-0 rounded-full px-2 text-xs font-semibold transition ${
-                    selected
-                      ? "bg-white text-ink shadow-[0_4px_14px_rgba(31,41,35,0.08)] ring-1 ring-ink/8"
-                      : "text-ink/48 hover:bg-white/54 hover:text-ink/70"
-                  }`}
-                  aria-pressed={selected}
-                >
-                  <span className="block truncate">{planTone[option.style] ?? option.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </header>
 
-      <div className="relative z-10 mt-3 min-h-0 overflow-y-auto pr-0.5">
-        <div className="grid gap-1.5">
-          {groups.map((group, index) => (
-            <CatalogGroupRow key={group.id} group={group} index={index} />
-          ))}
+      {showDocument ? (
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-ink/[0.075] [scrollbar-color:rgba(6,63,39,0.28)_transparent] [scrollbar-width:thin]">
+          <div className="divide-y divide-ink/[0.075]">
+            {documentRows.map((card, index) => (
+              <CatalogDocumentRow
+                key={card.id}
+                card={card}
+                index={index}
+                active={card.id === currentCardId || card.status === "active"}
+                onOpenCard={onOpenCard}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : showCards ? (
+        <div className="mt-3 max-h-[14rem] overflow-y-auto overscroll-contain rounded-[1.45rem] border border-ink/[0.08] bg-white/28 p-2 pr-1 [scrollbar-color:rgba(6,63,39,0.32)_transparent] [scrollbar-width:thin]">
+          <div className="divide-y divide-ink/[0.07]">
+            {deck.cards.map((card, index) => (
+              <CatalogCardRow
+                key={card.id}
+                card={card}
+                index={index}
+                active={card.id === currentCardId || card.status === "active"}
+                onOpenCard={onOpenCard}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 divide-y divide-ink/[0.075] border-y border-ink/[0.075]">
+            {visibleGroups.map((group, index) => (
+              <CatalogGroupRow
+                key={group.id}
+                group={group}
+                index={index}
+                onOpenCard={onOpenCard}
+              />
+            ))}
+          </div>
+
+          {groups.length > visibleGroups.length && (
+            <button
+              type="button"
+              className="mt-3 h-9 w-full rounded-full border border-ink/10 bg-white/42 text-xs font-semibold text-ink/50"
+            >
+              查看全部阶段
+            </button>
+          )}
+        </>
+      )}
     </section>
   );
 }
 
-function CatalogGroupRow({ group, index }: { group: CatalogGroup; index: number }) {
-  const tone = getGroupTone(group.status);
-  const Icon = tone.Icon;
-  const minutes = group.cards.reduce((sum, card) => sum + card.estimatedMinutes, 0);
+function CatalogDocumentRow({
+  card,
+  index,
+  active,
+  onOpenCard
+}: {
+  card: TaskCard;
+  index: number;
+  active: boolean;
+  onOpenCard?: (cardId: string) => void;
+}) {
+  const done = isCompletedCard(card);
+  const tone = getCardTone(card, active);
+  const content = (
+    <>
+      <span className={`font-editorial text-[1.06rem] leading-none ${tone.number}`}>
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <span className="min-w-0">
+        <span className={`line-clamp-2 text-[0.92rem] font-semibold leading-[1.2] ${tone.title}`}>
+          {card.title}
+        </span>
+        <span className={`mt-0.5 block truncate text-[0.66rem] font-semibold ${tone.meta}`}>
+          {tone.label}
+        </span>
+      </span>
+      <span className={`justify-self-end text-right text-[0.72rem] font-semibold ${tone.time}`}>
+        {card.estimatedMinutes}m
+      </span>
+    </>
+  );
+
+  if (onOpenCard) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenCard(card.id)}
+        className={`grid min-h-[52px] w-full grid-cols-[2.125rem_minmax(0,1fr)_2.625rem] items-center gap-2 border-l-2 py-2 pl-2 pr-1 text-left transition hover:bg-ink/[0.025] ${active && !done ? "border-ink/42" : "border-transparent"}`}
+        aria-label={`${done ? "已完成 " : ""}${card.title}`}
+      >
+        {content}
+      </button>
+    );
+  }
 
   return (
-    <div className={`relative grid min-h-[56px] grid-cols-[1.7rem_minmax(0,1fr)_4.1rem] items-center gap-2 rounded-[0.9rem] px-2.5 py-2 ring-1 ${tone.row}`}>
-      <span className={`grid size-5 place-items-center rounded-full border ${tone.icon}`}>
-        <Icon size={11} />
+    <div className={`grid min-h-[52px] grid-cols-[2.125rem_minmax(0,1fr)_2.625rem] items-center gap-2 border-l-2 py-2 pl-2 pr-1 ${active && !done ? "border-ink/42" : "border-transparent"}`}>
+      {content}
+    </div>
+  );
+}
+
+function CatalogCardRow({
+  card,
+  index,
+  active,
+  onOpenCard
+}: {
+  card: TaskCard;
+  index: number;
+  active: boolean;
+  onOpenCard?: (cardId: string) => void;
+}) {
+  const done = isCompletedCard(card);
+  const tone = getCardTone(card, active);
+  const content = (
+    <>
+      <span className={`font-editorial text-[1.08rem] leading-none ${tone.number}`}>
+        {String(index + 1).padStart(2, "0")}
       </span>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[0.68rem] font-semibold text-ink/36">{String(index + 1).padStart(2, "0")}</span>
-          <span className="truncate text-[0.9rem] font-semibold leading-5 text-ink">{group.title}</span>
-        </div>
-        <div className="mt-0.5 truncate text-[0.68rem] font-medium text-ink/44">
-          包含 {group.cards.length} 张卡 · {tone.label}
-        </div>
-      </div>
-      <span className="justify-self-end rounded-full bg-white/62 px-2 py-1 text-[0.68rem] font-semibold text-ink/48">
+      <span className="min-w-0">
+        <span className={`line-clamp-2 text-[0.9rem] font-semibold leading-[1.18] ${tone.title}`}>
+          {card.title}
+        </span>
+        <span className={`mt-0.5 block truncate text-[0.66rem] font-semibold ${tone.meta}`}>
+          {tone.label}
+        </span>
+      </span>
+      <span className={`justify-self-end text-right text-[0.72rem] font-semibold ${tone.time}`}>
+        {card.estimatedMinutes}m
+      </span>
+    </>
+  );
+
+  if (onOpenCard) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenCard(card.id)}
+        className={`grid min-h-[54px] w-full grid-cols-[2.125rem_minmax(0,1fr)_2.625rem] items-center gap-2 rounded-[1rem] px-3 text-left transition hover:bg-ink/[0.04] ${tone.row}`}
+        aria-label={`${done ? "已完成 " : ""}${card.title}`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={`grid min-h-[54px] grid-cols-[2.125rem_minmax(0,1fr)_2.625rem] items-center gap-2 rounded-[1rem] px-3 ${tone.row}`}>
+      {content}
+    </div>
+  );
+}
+
+function CatalogGroupRow({
+  group,
+  index,
+  onOpenCard
+}: {
+  group: CatalogGroup;
+  index: number;
+  onOpenCard?: (cardId: string) => void;
+}) {
+  const tone = getGroupTone(group.status);
+  const minutes = group.cards.reduce((sum, card) => sum + card.estimatedMinutes, 0);
+  const cardId = group.cards[0]?.id;
+  const content = (
+    <>
+      <span className={`font-editorial text-[1.08rem] leading-none ${tone.number}`}>
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <span className="min-w-0">
+        <span className={`line-clamp-2 text-[0.9rem] font-semibold leading-[1.18] ${tone.title}`}>{group.title}</span>
+        <span className={`mt-0.5 block truncate text-[0.66rem] font-semibold ${tone.meta}`}>
+          {tone.label}
+        </span>
+      </span>
+      <span className="justify-self-end text-right text-[0.72rem] font-semibold text-ink/48">
         {minutes}m
       </span>
+    </>
+  );
+
+  if (onOpenCard && cardId) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenCard(cardId)}
+        className={`grid min-h-[54px] w-full grid-cols-[2.125rem_minmax(0,1fr)_2.625rem] items-center gap-2 px-3 text-left transition hover:bg-ink/[0.04] ${tone.row}`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={`grid min-h-[54px] grid-cols-[2.125rem_minmax(0,1fr)_2.625rem] items-center gap-2 px-3 ${tone.row}`}>
+      {content}
     </div>
   );
 }
@@ -204,57 +328,121 @@ function getDeckStatusCopy(status: TaskDeck["deckStatus"]) {
   }
 
   if (status === "frozen") {
-    return { label: "已冻结", className: "bg-sky-50 text-sky-900 ring-sky-200/70" };
+    return { label: "冰冻任务", className: "bg-sky-50 text-sky-900 ring-sky-200/70" };
   }
 
   if (status === "failed") {
-    return { label: "已失败", className: "bg-[#fff1e8] text-ember ring-ember/18" };
+    return { label: "燃烧", className: "bg-[#fff1e8] text-ember ring-ember/18" };
   }
 
   return { label: "进行中", className: "bg-ink/[0.055] text-ink/62 ring-ink/8" };
+}
+
+function isCompletedCard(card: TaskCard) {
+  return card.status === "completed" || card.status === "rewarded";
+}
+
+function getCardTone(card: TaskCard, active: boolean) {
+  if (isCompletedCard(card)) {
+    return {
+      label: "已完成",
+      row: "bg-transparent",
+      number: "text-ink/24",
+      title: "text-ink/34 line-through decoration-ink/32",
+      meta: "text-ink/26",
+      time: "text-ink/28"
+    };
+  }
+
+  if (card.status === "frozen" || card.damageEffect === "freeze") {
+    return {
+      label: "冰冻任务",
+      row: "bg-[linear-gradient(90deg,rgba(240,251,255,0.58),transparent)]",
+      number: "text-sky-700/62",
+      title: "text-sky-950",
+      meta: "text-sky-800/54",
+      time: "text-sky-800/56"
+    };
+  }
+
+  if (card.damageEffect === "burn" || card.urgencyStage === "burning" || card.urgencyStage === "expired") {
+    return {
+      label: "燃烧",
+      row: "bg-[linear-gradient(90deg,rgba(255,241,232,0.62),transparent)]",
+      number: "text-ember/60",
+      title: "text-ember",
+      meta: "text-ember/58",
+      time: "text-ember/58"
+    };
+  }
+
+  if (active) {
+    return {
+      label: "当前任务",
+      row: "bg-mist/50",
+      number: "text-ink/46",
+      title: "text-ink",
+      meta: "text-ink/46",
+      time: "text-ink/54"
+    };
+  }
+
+  return {
+    label: "待开始",
+    row: "bg-transparent",
+    number: "text-ink/34",
+    title: "text-ink/78",
+    meta: "text-ink/36",
+    time: "text-ink/44"
+  };
 }
 
 function getGroupTone(status: CatalogGroup["status"]) {
   if (status === "completed") {
     return {
       label: "已完成",
-      row: "bg-white/48 ring-moss/12",
-      icon: "border-moss/80 bg-moss text-white",
-      Icon: Check
+      row: "bg-transparent",
+      number: "text-moss/70",
+      title: "text-ink/62 line-through",
+      meta: "text-moss/54"
     };
   }
 
   if (status === "frozen") {
     return {
-      label: "后台冻结",
-      row: "bg-[linear-gradient(90deg,rgba(241,251,255,0.92),rgba(255,255,255,0.58))] ring-sky-200/52",
-      icon: "border-sky-200 bg-white/80 text-sky-800 shadow-[0_0_14px_rgba(125,211,252,0.24)]",
-      Icon: Snowflake
+      label: "冰冻任务",
+      row: "bg-[linear-gradient(90deg,rgba(240,251,255,0.58),transparent)]",
+      number: "text-sky-700/62",
+      title: "text-sky-950",
+      meta: "text-sky-800/54"
     };
   }
 
   if (status === "failed") {
     return {
-      label: "任务失败",
-      row: "bg-[linear-gradient(90deg,rgba(255,244,236,0.92),rgba(255,255,255,0.58))] ring-ember/18",
-      icon: "border-ember/30 bg-white/80 text-ember shadow-[0_0_14px_rgba(231,120,75,0.2)]",
-      Icon: Flame
+      label: "燃烧",
+      row: "bg-[linear-gradient(90deg,rgba(255,241,232,0.62),transparent)]",
+      number: "text-ember/60",
+      title: "text-ember",
+      meta: "text-ember/58"
     };
   }
 
   if (status === "active") {
     return {
       label: "当前阶段",
-      row: "bg-ink/[0.055] ring-ink/8",
-      icon: "border-ink bg-ink text-white",
-      Icon: CircleDot
+      row: "rounded-[1rem] bg-mist/46",
+      number: "text-ink/42",
+      title: "text-ink",
+      meta: "text-ink/42"
     };
   }
 
   return {
     label: "待开始",
-    row: "bg-white/36 ring-ink/6",
-    icon: "border-ink/16 bg-white/70 text-ink/40",
-    Icon: AlertTriangle
+    row: "bg-transparent",
+    number: "text-ink/34",
+    title: "text-ink/78",
+    meta: "text-ink/36"
   };
 }

@@ -6,15 +6,13 @@ import {
   BookOpen,
   CheckCircle2,
   Clock3,
-  Flame,
   Gift,
   Layers3,
-  Snowflake,
   Trophy,
   type LucideIcon
 } from "lucide-react";
 import type { PlanOption, OverlayType, ProofRecord, TaskCard, TaskDeck, TaskFlowState } from "@/lib/types";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useNextCardStore } from "@/store/useNextCardStore";
 import { CompactPlanCatalog } from "@/components/deck/CompactPlanCatalog";
 
@@ -26,10 +24,11 @@ const overlayTitle: Record<OverlayType, { eyebrow: string; title: string }> = {
   "deck-card-detail": { eyebrow: "card review", title: "行动卡详情" },
   "evidence-review": { eyebrow: "review", title: "今日证据复盘" },
   "reward-review": { eyebrow: "review", title: "奖励卡复盘" },
-  "freeze-review": { eyebrow: "review", title: "冻结重排复盘" },
+  "freeze-review": { eyebrow: "review", title: "冰冻任务复盘" },
   "burn-review": { eyebrow: "review", title: "燃烧节奏复盘" },
   "burn-failed-review": { eyebrow: "review", title: "燃烧失败与风险" },
-  "frozen-todo-review": { eyebrow: "review", title: "冻结代办复盘" },
+  "frozen-todo-review": { eyebrow: "review", title: "冰冻任务复盘" },
+  "completed-review": { eyebrow: "review", title: "完成任务复盘" },
   "proof-excel-review": { eyebrow: "table", title: "大任务进度表" },
   "completion-receipt": { eyebrow: "proof saved", title: "完成收据" },
   "summary-review": { eyebrow: "summary", title: "完整复盘文档" },
@@ -47,7 +46,6 @@ export function AppOverlayHost() {
   const activeDeck = deck.decks.find((item) => item.id === deck.activeDeckId);
   const selectedPlan = plans.options.find((option) => option.id === plans.selectedPlanId) ?? plans.options[0];
   const currentRecords = activeDeck ? proofs.records.filter((record) => record.deckId === activeDeck.id) : [];
-  const currentDecks = activeDeck ? [activeDeck] : [];
   const currentRewardCount = activeDeck ? deck.rewardCards.filter((reward) => reward.deckId === activeDeck.id).length : 0;
 
   if (activeOverlay.type === "completion-receipt") {
@@ -119,12 +117,13 @@ export function AppOverlayHost() {
           )}
           {activeOverlay.type === "evidence-review" && <EvidenceReview records={currentRecords} />}
           {activeOverlay.type === "reward-review" && <RewardReview records={currentRecords} rewardCount={currentRewardCount} />}
-          {activeOverlay.type === "freeze-review" && <FrozenTodoReview records={currentRecords} decks={currentDecks} onOpenCard={openDeckCardDetail} />}
-          {activeOverlay.type === "burn-review" && <BurnFailedReview records={currentRecords} decks={currentDecks} onOpenCard={openDeckCardDetail} />}
-          {activeOverlay.type === "burn-failed-review" && <BurnFailedReview records={currentRecords} decks={currentDecks} onOpenCard={openDeckCardDetail} />}
-          {activeOverlay.type === "frozen-todo-review" && <FrozenTodoReview records={currentRecords} decks={currentDecks} onOpenCard={openDeckCardDetail} />}
+          {activeOverlay.type === "freeze-review" && <FrozenTodoReview records={proofs.records} decks={deck.decks} />}
+          {activeOverlay.type === "burn-review" && <BurnFailedReview records={proofs.records} decks={deck.decks} />}
+          {activeOverlay.type === "burn-failed-review" && <BurnFailedReview records={proofs.records} decks={deck.decks} />}
+          {activeOverlay.type === "frozen-todo-review" && <FrozenTodoReview records={proofs.records} decks={deck.decks} />}
+          {activeOverlay.type === "completed-review" && <CompletedDeckReview records={proofs.records} decks={deck.decks} />}
           {activeOverlay.type === "proof-excel-review" && (
-            <ProofExcelReview activeDeck={activeDeck} taskFlow={taskFlow} records={currentRecords} onOpenReview={openOverlay} />
+            <ProofExcelReview decks={deck.decks} activeDeckId={deck.activeDeckId} records={proofs.records} />
           )}
           {activeOverlay.type === "summary-review" && <SummaryReview summary={makeCurrentSummary(currentRecords)} analysisTitle={analysis?.goalUnderstanding} />}
           {activeOverlay.type === "proof-record-review" && (
@@ -147,7 +146,7 @@ function makeCurrentSummary(records: ProofRecord[]) {
   const frozen = evidence.filter((record) => record.status === "frozen").length;
   const burning = records.filter((record) => record.timeStatus === "burning-completed" || record.lastDamageEffect === "burn").length;
 
-  return `当前目标已留下 ${evidence.length} 条证据，其中 ${completed} 条完成，${frozen} 条冻结，${burning} 条使用燃烧节奏。`;
+  return `当前目标已留下 ${evidence.length} 条证据，其中 ${completed} 条完成，${frozen} 条冰冻任务，${burning} 条使用燃烧节奏。`;
 }
 
 function CompletionReceipt({
@@ -313,7 +312,7 @@ function TaskNodeDetail({
       />
       <OverlaySection title="任务组摘要">
         <MiniLine title="卡片数量" detail={`这一组包含 ${nodeCards.length} 张行动卡，后台只保留任务组记录。`} />
-        <MiniLine title="完成情况" detail={`${completed}/${nodeCards.length} 已完成 · 冻结 ${frozen} · 失败 ${failed}`} />
+        <MiniLine title="完成情况" detail={`${completed}/${nodeCards.length} 已完成 · 冰冻 ${frozen} · 燃烧 ${failed}`} />
         <MiniLine title="展示规则" detail="详情默认不铺开单张卡，避免 proof 后台变成卡片流水账。" />
       </OverlaySection>
       <OverlaySection title="方案一/二/三怎么选">
@@ -385,29 +384,22 @@ function FrozenTodoReview({
 }: {
   records: ProofRecord[];
   decks: TaskDeck[];
-  onOpenCard: (cardId: string) => void;
 }) {
-  const frozen = records.filter((record) => record.status === "frozen" || record.timeStatus === "frozen-rescheduled");
   const frozenDecks = decks.filter((deck) => deck.deckStatus === "frozen");
-  const frozenCards = frozenDecks.reduce((sum, deck) => sum + deck.cards.filter((card) => card.status === "frozen").length, 0);
+  const rows = frozenDecks.map((deck) => makeProofDeckRow(deck, records, false));
+
+  if (rows.length === 0) {
+    return <EmptyOverlay message="还没有冰冻任务。" />;
+  }
 
   return (
     <div className="grid gap-3">
-      <OverlayCard icon={Snowflake} title={`${frozenDecks.length || frozen.length} 个冻结任务`}>
-        冻结不是失败，是把整组任务保存到后台。这里仅展示任务级摘要，不展开冻结卡片。
-      </OverlayCard>
-      <DetailGrid
-        items={[
-          ["冻结记录", frozen.length.toString()],
-          ["冻结任务", frozenDecks.length.toString()],
-          ["包含卡片", frozenCards.toString()],
-          ["最近建议", frozen[0]?.nextSuggestion ?? "继续执行 deck 后生成"]
-        ]}
-      />
-      <OverlaySection title="为什么被冻结">
-        <MiniLine title="上下文已保存" detail="冻结后停止后续打卡，后台只保留任务个体和卡片数量。" />
-        <MiniLine title="稍后重新规划" detail="恢复不从旧卡继续，而是从任务记录重新安排。" />
-      </OverlaySection>
+      <ProofDeckSummary title="冰冻任务" rows={rows} />
+      <div className="grid gap-3">
+        {rows.map((row) => (
+          <ProofDeckProgressCard key={row.deck.id} row={row} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -418,29 +410,48 @@ function BurnFailedReview({
 }: {
   records: ProofRecord[];
   decks: TaskDeck[];
-  onOpenCard: (cardId: string) => void;
 }) {
-  const failedRecords = records.filter((record) => record.status === "failed" || record.timeStatus === "expired" || record.lastDamageEffect === "burn");
   const failedDecks = decks.filter((deck) => deck.deckStatus === "failed");
-  const failedCards = failedDecks.reduce((sum, deck) => sum + deck.cards.filter((card) => card.damageEffect === "burn").length, 0);
+  const rows = failedDecks.map((deck) => makeProofDeckRow(deck, records, false));
+
+  if (rows.length === 0) {
+    return <EmptyOverlay message="还没有燃烧任务。" />;
+  }
 
   return (
     <div className="grid gap-3">
-      <OverlayCard icon={Flame} title={`${failedDecks.length || failedRecords.length} 个失败任务`}>
-        燃烧后整组任务锁定，不能继续打卡，也不能再次开始旧任务。
-      </OverlayCard>
-      <DetailGrid
-        items={[
-          ["失败记录", failedRecords.length.toString()],
-          ["失败任务", failedDecks.length.toString()],
-          ["包含卡片", failedCards.toString()],
-          ["下一步", failedRecords[0]?.nextSuggestion ?? "从 Input 新建任务"]
-        ]}
-      />
-      <OverlaySection title="燃烧原因">
-        <MiniLine title="任务已锁定" detail="后台只保留任务个体，不展开燃烧卡，也不提供继续按钮。" />
-        <MiniLine title="重新开始" detail="如果要重做，请创建一个新目标，让系统重新生成任务组。" />
-      </OverlaySection>
+      <ProofDeckSummary title="燃烧任务" rows={rows} />
+      <div className="grid gap-3">
+        {rows.map((row) => (
+          <ProofDeckProgressCard key={row.deck.id} row={row} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CompletedDeckReview({
+  records,
+  decks
+}: {
+  records: ProofRecord[];
+  decks: TaskDeck[];
+}) {
+  const completedDecks = decks.filter((deck) => deck.deckStatus === "completed");
+  const rows = completedDecks.map((deck) => makeProofDeckRow(deck, records, false));
+
+  if (rows.length === 0) {
+    return <EmptyOverlay message="还没有完成任务。" />;
+  }
+
+  return (
+    <div className="grid gap-3">
+      <ProofDeckSummary title="完成任务" rows={rows} />
+      <div className="grid gap-3">
+        {rows.map((row) => (
+          <ProofDeckProgressCard key={row.deck.id} row={row} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -496,163 +507,194 @@ function DeckStackReview({ decks }: { decks: TaskDeck[]; onOpenCard: (cardId: st
 }
 
 function ProofExcelReview({
-  activeDeck,
-  taskFlow,
-  records,
-  onOpenReview
+  decks,
+  activeDeckId,
+  records
 }: {
-  activeDeck: TaskDeck | undefined;
-  taskFlow: TaskFlowState | null;
+  decks: TaskDeck[];
+  activeDeckId: string | null;
   records: ProofRecord[];
-  onOpenReview: (type: OverlayType, id?: string) => void;
 }) {
-  const [showCompleted, setShowCompleted] = useState(false);
-
-  if (!activeDeck || !taskFlow) {
+  if (decks.length === 0) {
     return <EmptyOverlay message="还没有可展示的大任务进度。" />;
   }
 
-  const totalProgress = activeDeck.totalCards === 0
-    ? 0
-    : Math.round((activeDeck.completedCards / activeDeck.totalCards) * 100);
-  const nodeRows = taskFlow.nodes.map((node) => {
-    const cards = activeDeck.cards.filter((card) => card.flowNodeId === node.id);
-    const completed = cards.filter((card) => card.status === "completed" || card.status === "rewarded").length;
-    const frozen = cards.filter((card) => card.status === "frozen" || card.damageEffect === "freeze").length;
-    const burning = cards.filter((card) => card.urgencyStage === "burning" || card.urgencyStage === "expired" || card.damageEffect === "burn").length;
-    const evidence = records.filter((record) => cards.some((card) => record.cardId === card.id)).length;
-    const progress = cards.length === 0 ? node.progress : Math.round((completed / cards.length) * 100);
-    const status: NodeRowStatus =
-      cards.length > 0 && completed === cards.length
-        ? "completed"
-        : frozen > 0
-          ? "frozen"
-          : burning > 0
-            ? "burning"
-            : cards.some((card) => card.status === "active")
-              ? "active"
-              : "queued";
+  const rows = decks
+    .filter((deck) => deck.deckStatus !== "completed" && deck.deckStatus !== "frozen" && deck.deckStatus !== "failed")
+    .map((deck) => makeProofDeckRow(deck, records, deck.id === activeDeckId));
 
-    return { node, cards, completed, frozen, burning, evidence, progress, status };
-  });
-  const completedNodes = nodeRows.filter((row) => row.status === "completed");
-  const openNodes = nodeRows.filter((row) => row.status !== "completed");
+  if (rows.length === 0) {
+    return <EmptyOverlay message="还没有可展示的大任务进度。" />;
+  }
 
   return (
     <div className="grid gap-3">
-      <article className="rounded-[1.35rem] border border-ink/10 bg-white/70 p-4 shadow-sm">
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-fern">大任务进度表</div>
-            <h3 className="mt-1 truncate font-editorial text-[1.6rem] leading-tight text-ink">{activeDeck.coverTitle}</h3>
-          </div>
-          <span className="grid size-14 shrink-0 place-items-center rounded-[1rem] bg-ink text-sm font-semibold text-white">{totalProgress}%</span>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/8">
-          <div className="h-full rounded-full bg-moss" style={{ width: `${totalProgress}%` }} />
-        </div>
-      </article>
-
-      {completedNodes.length > 0 && (
-        <StackSummaryCard
-          title="已完成任务组"
-          label={`${completedNodes.length} 个`}
-          detail={`${completedNodes.reduce((sum, row) => sum + row.cards.length, 0)} 张卡已归档`}
-          metric="完成"
-          tone="done"
-          expanded={showCompleted}
-          onClick={() => setShowCompleted((value) => !value)}
-        />
-      )}
-
-      {showCompleted && completedNodes.length > 0 && (
-        <OverlaySection title="已完成大任务">
-          {completedNodes.map((row) => (
-            <NodeProgressRow key={row.node.id} row={row} onClick={() => onOpenReview("task-node-detail", row.node.id)} />
-          ))}
-        </OverlaySection>
-      )}
-
-      <OverlaySection title="继续推进">
-        {openNodes.length > 0 ? (
-          openNodes.map((row) => (
-            <NodeProgressRow key={row.node.id} row={row} onClick={() => onOpenReview("task-node-detail", row.node.id)} />
-          ))
-        ) : (
-          <div className="rounded-[1rem] bg-emerald-700 px-4 py-4 text-sm font-semibold text-white">所有大任务已经完成。</div>
-        )}
-      </OverlaySection>
+      <ProofDeckSummary title="大任务进度表" rows={rows} />
+      <div className="grid gap-3">
+        {rows.map((row) => (
+          <ProofDeckProgressCard key={row.deck.id} row={row} />
+        ))}
+      </div>
     </div>
   );
 }
 
-type NodeRowStatus = "completed" | "frozen" | "burning" | "active" | "queued";
+type ProofDeckStatus = "completed" | "frozen" | "failed" | "active" | "queued" | "needs-review";
 
-type NodeProgressRowData = {
-  node: TaskFlowState["nodes"][number];
-  cards: TaskCard[];
+type ProofDeckRowData = {
+  deck: TaskDeck;
+  status: ProofDeckStatus;
   completed: number;
-  frozen: number;
-  burning: number;
+  total: number;
+  minutes: number;
   evidence: number;
   progress: number;
-  status: NodeRowStatus;
+  active: boolean;
 };
 
-function NodeProgressRow({ row, onClick }: { row: NodeProgressRowData; onClick: () => void }) {
-  const tone = getNodeTone(row.status);
-  const total = row.cards.length;
+function ProofDeckSummary({ title, rows }: { title: string; rows: ProofDeckRowData[] }) {
+  const completedDecks = rows.filter((row) => row.status === "completed").length;
+  const totalCards = rows.reduce((sum, row) => sum + row.total, 0);
+  const completedCards = rows.reduce((sum, row) => sum + row.completed, 0);
+  const averageProgress = totalCards === 0 ? 0 : Math.round((completedCards / totalCards) * 100);
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`grid h-16 w-full grid-cols-[minmax(0,1fr)_4.6rem] items-center gap-3 rounded-[1rem] px-3 text-left shadow-sm ${tone.rowClass}`}
-    >
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className={`grid h-5 w-14 shrink-0 place-items-center rounded-full text-[0.62rem] font-black ${tone.badgeClass}`}>
-            {tone.label}
-          </span>
-          <span className={`truncate text-sm font-black ${tone.titleClass}`}>{row.node.title}</span>
+    <article className="rounded-[1.35rem] border border-ink/10 bg-white/70 p-4 shadow-sm">
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-fern">{title}</div>
+          <h3 className="mt-1 truncate font-editorial text-[1.6rem] leading-tight text-ink">任务组</h3>
+          <p className="mt-1 truncate text-[0.72rem] font-semibold text-ink/48">
+            {rows.length} 个任务 · {completedDecks} 个完成 · {completedCards}/{totalCards} 张卡
+          </p>
         </div>
-        <div className={`mt-1 truncate text-[0.68rem] font-semibold ${tone.mutedClass}`}>
-          {row.completed}/{total} 完成 · 冻结 {row.frozen} · 燃烧 {row.burning} · 证据 {row.evidence}
-        </div>
+        <span className="grid size-14 shrink-0 place-items-center rounded-[1rem] bg-ink text-sm font-semibold text-white">{averageProgress}%</span>
       </div>
-      <span className={`justify-self-end rounded-full px-2.5 py-1 text-xs font-semibold ${tone.badgeClass}`}>{row.progress}%</span>
-    </button>
+    </article>
   );
 }
 
-function getNodeTone(status: NodeRowStatus) {
+function makeProofDeckRow(deck: TaskDeck, records: ProofRecord[], active: boolean): ProofDeckRowData {
+  const completed = deck.cards.filter((card) => card.status === "completed" || card.status === "rewarded").length;
+  const total = deck.totalCards || deck.cards.length;
+  const progress = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const evidence = records.filter((record) => record.deckId === deck.id).length;
+  const minutes = deck.cards.reduce((sum, card) => sum + card.estimatedMinutes, 0);
+
+  return {
+    deck,
+    status: getProofDeckStatus(deck, active),
+    completed,
+    total,
+    minutes,
+    evidence,
+    progress,
+    active
+  };
+}
+
+function ProofDeckProgressCard({
+  row,
+  actionLabel,
+  onAction
+}: {
+  row: ProofDeckRowData;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  const tone = getProofDeckTone(row.status);
+
+  return (
+    <article
+      aria-disabled={row.status === "failed" ? true : undefined}
+      className={`min-h-[6.4rem] rounded-[1.35rem] border border-ink/10 px-4 py-4 shadow-sm ${tone.rowClass}`}
+    >
+      <div className="grid grid-cols-[4.3rem_minmax(0,1fr)_3.25rem] items-center gap-3">
+        <span className={`grid h-7 place-items-center rounded-full text-[0.68rem] font-black ${tone.badgeClass}`}>
+          {tone.label}
+        </span>
+        <div className="min-w-0">
+          <h3 className={`line-clamp-2 font-editorial text-[1.45rem] leading-[1.05] ${tone.titleClass}`}>
+            {row.deck.coverTitle}
+          </h3>
+          <p className={`mt-2 truncate text-[0.7rem] font-semibold ${tone.metaClass}`}>
+            {row.completed}/{row.total} 完成 · {row.minutes}m · 证据 {row.evidence}
+          </p>
+        </div>
+        <span className={`grid size-12 place-items-center rounded-[1rem] text-sm font-semibold ${tone.metricClass}`}>
+          {row.progress}%
+        </span>
+      </div>
+      {actionLabel && onAction && (
+        <div className="mt-3 flex justify-end border-t border-ink/8 pt-3">
+          <button
+            type="button"
+            onClick={onAction}
+            className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white"
+          >
+            {actionLabel}
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function getProofDeckStatus(deck: TaskDeck, active: boolean): ProofDeckStatus {
+  if (deck.deckStatus === "completed") {
+    return "completed";
+  }
+
+  if (deck.deckStatus === "frozen") {
+    return "frozen";
+  }
+
+  if (deck.deckStatus === "failed") {
+    return "failed";
+  }
+
+  if (deck.deckStatus === "needs-review") {
+    return "needs-review";
+  }
+
+  if (active || deck.deckStatus === "active") {
+    return "active";
+  }
+
+  return "queued";
+}
+
+function getProofDeckTone(status: ProofDeckStatus) {
   if (status === "completed") {
     return {
       label: "完成",
-      rowClass: "bg-emerald-700 text-white",
-      badgeClass: "bg-white/20 text-white",
-      titleClass: "line-through decoration-white/70",
-      mutedClass: "text-white/72"
+      rowClass: "bg-[#e7eee8] text-ink/50",
+      badgeClass: "bg-white/55 text-ink/48",
+      titleClass: "text-ink/42 line-through decoration-ink/34",
+      metaClass: "text-ink/34",
+      metricClass: "bg-white/50 text-ink/44"
     };
   }
 
   if (status === "frozen") {
     return {
       label: "冻结",
-      rowClass: "bg-[#cdebf0] text-sky-950",
-      badgeClass: "bg-white/55 text-sky-950",
+      rowClass: "bg-[#dff3f7] text-sky-950",
+      badgeClass: "bg-white/58 text-sky-950",
       titleClass: "text-sky-950",
-      mutedClass: "text-sky-950/62"
+      metaClass: "text-sky-950/58",
+      metricClass: "bg-white/52 text-sky-950"
     };
   }
 
-  if (status === "burning") {
+  if (status === "failed") {
     return {
       label: "燃烧",
-      rowClass: "bg-[#e7784b] text-white",
-      badgeClass: "bg-white/20 text-white",
-      titleClass: "text-white",
-      mutedClass: "text-white/72"
+      rowClass: "bg-[#f7d8c8] text-[#9b3a20]/70",
+      badgeClass: "bg-white/46 text-[#9b3a20]/62",
+      titleClass: "text-[#9b3a20]/56",
+      metaClass: "text-[#9b3a20]/48",
+      metricClass: "bg-white/48 text-[#9b3a20]/58"
     };
   }
 
@@ -660,18 +702,31 @@ function getNodeTone(status: NodeRowStatus) {
     return {
       label: "进行",
       rowClass: "bg-[#ffe08a] text-ink",
-      badgeClass: "bg-white/55 text-ink",
+      badgeClass: "bg-white/60 text-ink",
       titleClass: "text-ink",
-      mutedClass: "text-ink/62"
+      metaClass: "text-ink/62",
+      metricClass: "bg-white/56 text-ink"
+    };
+  }
+
+  if (status === "needs-review") {
+    return {
+      label: "复盘",
+      rowClass: "bg-[#f1efe6] text-ink",
+      badgeClass: "bg-white/58 text-ink/70",
+      titleClass: "text-ink/78",
+      metaClass: "text-ink/48",
+      metricClass: "bg-white/54 text-ink/62"
     };
   }
 
   return {
     label: "待做",
-    rowClass: "bg-[#edf5ef] text-ink",
-    badgeClass: "bg-white/60 text-ink",
-    titleClass: "text-ink",
-    mutedClass: "text-ink/54"
+    rowClass: "bg-[#eaf5ed] text-ink",
+    badgeClass: "bg-white/62 text-ink",
+    titleClass: "text-ink/80",
+    metaClass: "text-ink/50",
+    metricClass: "bg-white/56 text-ink/70"
   };
 }
 
@@ -782,70 +837,6 @@ function DeckCardDetail({
         </button>
       </OverlaySection>
     </div>
-  );
-}
-
-function StackSummaryCard({
-  title,
-  label,
-  detail,
-  metric,
-  tone,
-  expanded,
-  onClick
-}: {
-  title: string;
-  label: string;
-  detail: string;
-  metric: string;
-  tone: "done" | "frozen" | "burn";
-  expanded?: boolean;
-  onClick: () => void;
-}) {
-  const toneClass = {
-    done: {
-      bg: "bg-emerald-700 text-white",
-      backOne: "bg-emerald-600/70",
-      backTwo: "bg-emerald-500/64",
-      text: "text-white/70",
-      metric: "bg-white/18"
-    },
-    frozen: {
-      bg: "bg-[#cdebf0] text-sky-950",
-      backOne: "bg-sky-200/70",
-      backTwo: "bg-cyan-200/60",
-      text: "text-sky-950/62",
-      metric: "bg-white/42"
-    },
-    burn: {
-      bg: "bg-[#e7784b] text-white",
-      backOne: "bg-[#d65d35]/68",
-      backTwo: "bg-[#f2a06d]/58",
-      text: "text-white/72",
-      metric: "bg-white/18"
-    }
-  }[tone];
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative min-h-24 overflow-hidden rounded-[1.25rem] border border-ink/10 p-4 text-left shadow-card ${toneClass.bg}`}
-      aria-expanded={expanded}
-    >
-      <span className={`absolute inset-x-5 bottom-2 top-4 rotate-[-3deg] rounded-[1.15rem] ${toneClass.backOne}`} aria-hidden />
-      <span className={`absolute inset-x-4 bottom-3 top-3 rotate-[3deg] rounded-[1.15rem] ${toneClass.backTwo}`} aria-hidden />
-      <div className="relative z-10 flex h-full min-h-16 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className={`text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${toneClass.text}`}>{title}</div>
-          <div className="mt-1 truncate font-editorial text-[1.52rem] leading-none">{label}</div>
-          <div className={`mt-2 truncate text-xs font-semibold ${toneClass.text}`}>{detail}</div>
-        </div>
-        <span className={`grid size-12 shrink-0 place-items-center rounded-[1rem] text-xs font-semibold ${toneClass.metric}`}>
-          {metric}
-        </span>
-      </div>
-    </button>
   );
 }
 
@@ -976,11 +967,11 @@ function getTaskGroupTone(status: TaskDeck["deckStatus"]) {
   }
 
   if (status === "frozen") {
-    return { label: "冻结", chipClass: "bg-sky-100 text-sky-800", barClass: "bg-sky-300" };
+    return { label: "冰冻", chipClass: "bg-sky-100 text-sky-800", barClass: "bg-sky-300" };
   }
 
   if (status === "failed") {
-    return { label: "失败", chipClass: "bg-[#fbe3d4] text-[#9b351a]", barClass: "bg-[#e7784b]" };
+    return { label: "燃烧", chipClass: "bg-[#fbe3d4] text-[#9b351a]", barClass: "bg-[#e7784b]" };
   }
 
   if (status === "active") {

@@ -117,14 +117,16 @@ export function SwipeTaskCard({ deck, card, focus = false }: SwipeTaskCardProps)
       <AnimatePresence>
         {showCatalog && (
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: "100%" }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 18 }}
-            className="absolute inset-x-1 bottom-1 z-40 max-h-[78%]"
+            exit={{ opacity: 0, y: "100%" }}
+            transition={{ type: "spring", stiffness: 360, damping: 34 }}
+            className="absolute inset-x-0 bottom-0 z-40 h-[80dvh] overflow-hidden rounded-t-[2rem] border border-ink/10 bg-[#fffaf4] px-6 pb-5 pt-6 shadow-[0_-24px_48px_rgba(31,41,35,0.14)]"
           >
             <CompactPlanCatalog
               deck={deck}
               currentCardId={card.id}
+              variant="document"
               onClose={() => setShowCatalog(false)}
               onOpenCard={(cardId) => {
                 setShowCatalog(false);

@@ -289,6 +289,7 @@ export type OverlayType =
   | "burn-review"
   | "burn-failed-review"
   | "frozen-todo-review"
+  | "completed-review"
   | "proof-excel-review"
   | "completion-receipt"
   | "summary-review"
